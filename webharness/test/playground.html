@@ -1,0 +1,268 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>SimpleCADAPI browser playground</title>
+    <style>
+      body {
+        font-family: system-ui, sans-serif;
+        max-width: 900px;
+        margin: 2rem auto;
+        padding: 0 1rem;
+      }
+      textarea {
+        width: 100%;
+        height: 260px;
+        font-family: ui-monospace, Consolas, monospace;
+        font-size: 13px;
+        box-sizing: border-box;
+      }
+      #status {
+        margin: 0.5rem 0;
+        font-weight: bold;
+      }
+      #status.ready { color: #0a7d2c; }
+      #status.busy { color: #a06a00; }
+      #status.error { color: #b00020; }
+      pre#output {
+        background: #111;
+        color: #d7d7d7;
+        padding: 1rem;
+        white-space: pre-wrap;
+        word-break: break-word;
+        min-height: 4em;
+      }
+      .row { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; margin: 0.5rem 0; }
+      button { padding: 0.4rem 1rem; }
+    </style>
+  </head>
+  <body>
+    <h1>SimpleCADAPI browser playground</h1>
+    <p id="status" class="busy">正在初始化 Pyodide & OCP.wasm 环境…</p>
+
+    <textarea id="code" spellcheck="false">
+import simplecadapi as scad
+
+base = scad.make_box_rsolid(60.0, 36.0, 8.0, bottom_face_center=(0.0, 0.0, 0.0))
+hole = scad.make_cylinder_rsolid(5.0, 14.0, bottom_face_center=(0.0, 0.0, -3.0))
+slot = scad.make_box_rsolid(18.0, 8.0, 14.0, bottom_face_center=(14.0, 0.0, -3.0))
+part = scad.cut_rsolid(base, hole, slot)
+boss = scad.make_cylinder_rsolid(8.0, 7.0, bottom_face_center=(-18.0, 0.0, 8.0))
+part = scad.union_rsolid(part, boss)
+part = scad.apply_tag(part, "role.demo.bracket")
+
+print("volume", round(part.get_volume(), 3))
+print("faces", len(part.get_faces()))
+print("tags", scad.list_tags(part))
+</textarea>
+
+    <div class="row">
+      <button id="run" disabled>运行</button>
+      <label>导出/渲染变量名: <input id="shapeName" value="part" size="10" /></label>
+      <button id="exportStep" disabled>导出 STEP</button>
+      <button id="exportStl" disabled>导出 STL</button>
+      <button id="renderViews" disabled>生成检查图</button>
+      <button id="inspectGeometry" disabled>进行几何校验</button>
+    </div>
+    <div class="row">
+      <label>虚拟文件路径: <input id="filePath" value="/tmp/two_part_assembly.step" size="34" /></label>
+      <button id="downloadFile" disabled>下载 Assembly STEP</button>
+    </div>
+
+    <h3>输出</h3>
+    <pre id="output">(尚未运行)</pre>
+
+    <h3>检查图</h3>
+    <img id="previewImg" style="max-width: 100%; border: 1px solid #444; display: none" />
+
+    <script type="module">
+      const worker = new Worker(new URL("../src/worker.mjs", import.meta.url), {
+        type: "module",
+      });
+      const workerReady = new Promise((resolve, reject) => {
+        const onReady = (event) => {
+          if (event.data?.type !== "ready") return;
+          worker.removeEventListener("message", onReady);
+          resolve();
+        };
+        worker.addEventListener("message", onReady);
+        worker.addEventListener("error", (e) =>
+          reject(new Error("Worker 加载失败: " + (e.message || "未知错误"))));
+    });
+
+      const statusEl = document.getElementById("status");
+      const outputEl = document.getElementById("output");
+      const codeEl = document.getElementById("code");
+      const runBtn = document.getElementById("run");
+      const exportStepBtn = document.getElementById("exportStep");
+      const exportStlBtn = document.getElementById("exportStl");
+      const renderViewsBtn = document.getElementById("renderViews");
+      const inspectGeomBtn = document.getElementById("inspectGeometry");
+      const downloadFileBtn = document.getElementById("downloadFile");
+      const shapeNameEl = document.getElementById("shapeName");
+      const filePathEl = document.getElementById("filePath");
+      const previewImgEl = document.getElementById("previewImg");
+
+      function post(type, data) {
+        return new Promise((resolve) => {
+          const id = Math.random().toString(36).slice(2);
+          const handler = (event) => {
+            if (event.data.id !== id) return;
+            worker.removeEventListener("message", handler);
+            resolve(event.data);
+          };
+          worker.addEventListener("message", handler);
+          worker.postMessage({ id, type, data });
+        });
+      }
+
+      function setStatus(text, cls) {
+        statusEl.textContent = text;
+        statusEl.className = cls;
+      }
+
+      function renderRunResult(resp) {
+        if (resp.err) {
+          outputEl.textContent = "Worker 错误: " + resp.err.message;
+          return;
+        }
+        const { ok, stdout, stderr, error, shapes } = resp.data;
+        const lines = [];
+        lines.push(ok ? "OK" : "FAILED");
+        if (stdout) lines.push("--- stdout ---\n" + stdout);
+        if (stderr) lines.push("--- stderr ---\n" + stderr);
+        if (error) {
+          lines.push("--- error (ErrorGuidance) ---");
+          lines.push(JSON.stringify(error, null, 2));
+        }
+        lines.push("--- shapes (可导出的变量名) ---");
+        lines.push(shapes.join(", ") || "(无)");
+        outputEl.textContent = lines.join("\n\n");
+      }
+
+      function downloadBytes(bytes, filename, mime) {
+        const blob = new Blob([bytes], { type: mime });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(url);
+      }
+
+      async function runCode() {
+        runBtn.disabled = true;
+        setStatus("运行中…", "busy");
+        const resp = await post("run_code", {
+          code: codeEl.value,
+          sessionId: "default",
+        });
+        renderRunResult(resp);
+        setStatus("就绪", "ready");
+        runBtn.disabled = false;
+      }
+
+      async function exportShape(format) {
+        const shapeName = shapeNameEl.value.trim();
+        if (!shapeName) return;
+        setStatus(`导出 ${format} 中…`, "busy");
+        const ext = format === "step" ? "step" : "stl";
+        const mime = format === "step" ? "model/step" : "model/stl";
+        const resp = await post("export_shape", {
+          sessionId: "default",
+          shapeName,
+          format,
+          path: `/tmp/${shapeName}.${ext}`,
+        });
+        if (resp.err || !resp.data.ok) {
+          outputEl.textContent =
+            "导出失败: " +
+            (resp.err ? resp.err.message : JSON.stringify(resp.data.error, null, 2));
+        } else {
+          downloadBytes(resp.data.bytes, `${shapeName}.${ext}`, mime);
+          outputEl.textContent = `已导出 ${shapeName}.${ext}（${resp.data.size} 字节），浏览器应已触发下载。`;
+        }
+        setStatus("就绪", "ready");
+      }
+
+      async function downloadVirtualFile() {
+        const path = filePathEl.value.trim();
+        if (!path) return;
+        setStatus("读取 Assembly STEP 中…", "busy");
+        const resp = await post("read_file", { path });
+        if (resp.err || !resp.data?.bytes) {
+          outputEl.textContent =
+            "下载失败: " + (resp.err ? resp.err.message : "虚拟文件不存在或为空");
+        } else {
+          const filename = path.split("/").pop() || "assembly.step";
+          downloadBytes(resp.data.bytes, filename, "model/step");
+          outputEl.textContent = `已下载 ${filename}（${resp.data.bytes.byteLength} 字节）。`;
+        }
+        setStatus("就绪", "ready");
+      }
+
+      async function renderViews() {
+        const shapeName = shapeNameEl.value.trim();
+        if (!shapeName) return;
+        setStatus("生成检查图中…", "busy");
+        const resp = await post("render_views", {
+          sessionId: "default",
+          shapeName,
+          pathPrefix: `/tmp/${shapeName}_preview`,
+        });
+        if (resp.err || !resp.data.ok) {
+          outputEl.textContent =
+            "生成检查图失败: " +
+            (resp.err ? resp.err.message : JSON.stringify(resp.data.error, null, 2));
+        } else {
+          const blob = new Blob([resp.data.composite], { type: "image/png" });
+          previewImgEl.src = URL.createObjectURL(blob);
+          previewImgEl.style.display = "";
+          outputEl.textContent = `已生成 ${resp.data.images.length} 个视角的检查图并拼成一张（见下方）。`;
+        }
+        setStatus("就绪", "ready");
+      }
+      async function inspectGeometry(){
+        const shapeName = shapeNameEl.value.trim();
+        if (!shapeName) return;
+        setStatus("几何校验中…", "busy");
+        const resp = await post("inspect_geometry", {
+          sessionId: "default",
+          shapeName
+        });
+        if (resp.err || !resp.data.ok) {
+          outputEl.textContent =
+            "几何校验失败: " +
+            (resp.err ? resp.err.message : JSON.stringify(resp.data.error, null, 2));
+        } else {
+          outputEl.textContent = JSON.stringify(resp.data,null,2);
+        }
+        setStatus("就绪", "ready");
+      }
+
+      runBtn.addEventListener("click", runCode);
+      exportStepBtn.addEventListener("click", () => exportShape("step"));
+      downloadFileBtn.addEventListener("click", downloadVirtualFile);
+      exportStlBtn.addEventListener("click", () => exportShape("stl"));
+      renderViewsBtn.addEventListener("click", renderViews);
+      inspectGeomBtn.addEventListener("click",inspectGeometry);
+      // Warm up the Pyodide environment on load so the first real "运行" click
+      // isn't the one paying the 10-40s cold-start cost.
+      (async () => {
+        await workerReady;
+        await post("run_code", { code: "pass", sessionId: "default" });
+        setStatus("就绪", "ready");
+        runBtn.disabled = false;
+        exportStepBtn.disabled = false;
+        exportStlBtn.disabled = false;
+        renderViewsBtn.disabled = false;
+        inspectGeomBtn.disabled = false;
+        downloadFileBtn.disabled = false;
+      })().catch((err) => {
+        setStatus("初始化失败: " + (err && err.message ? err.message : String(err)), "error");
+      });
+    </script>
+  </body>
+</html>

@@ -1,0 +1,21 @@
+# make_rectangle_rface
+
+## API Definition
+
+```python
+def make_rectangle_rface(width: ScalarLike, height: ScalarLike, center: Tuple[ScalarLike, ScalarLike, ScalarLike] = (0, 0, 0), normal: Tuple[ScalarLike, ScalarLike, ScalarLike] = (0, 0, 1)) -> Face
+```
+
+*Source: operations.py*
+
+## Import Surface
+
+- top-level: `from simplecadapi import make_rectangle_rface`
+
+## Description
+
+Create a rectangular face.
+
+## Usage
+
+Create a filled rectangular profile for blocks, plates, tabs, and straight extrusions.

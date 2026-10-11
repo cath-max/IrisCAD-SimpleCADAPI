@@ -1,0 +1,11 @@
+{
+  "make a mug, height 100mm": [
+    "make_box_rsolid", "make_cylinder_rsolid", "make_rectangle_rface", "make_rectangle_rwire", "make_helix_redge", "make_helix_rwire", "helical_sweep_rsolid", "make_cone_rsolid", "cut_rsolid", "union_rsolid", "intersect_rsolid", "extrude_rsolid", "revolve_rsolid", "fillet_rsolid", "shell_rsolid", "Const", "apply_tag", "assign_material_rpart", "chamfer_rsolid", "const_function"
+  ],
+  "boolean cut a hole": [
+    "cut_rsolid", "intersect_rsolid", "make_2d_cut_rface", "make_n_hole_flange_rsolid", "union_rsolid", "make_2d_intersect_rface", "make_2d_union_rface", "export_step", "export_stl", "replay_graph", "extrude_rsolid", "make_box_rsolid", "make_cylinder_rsolid", "revolve_rsolid", "Const", "Expr", "apply_tag", "assign_material_rpart", "chamfer_rsolid", "const_function"
+  ],
+  "flange with bolt holes": [
+    "make_n_hole_flange_rsolid", "make_threaded_rod_rsolid", "make_material_rmaterial", "union_rsolid", "cut_rsolid", "intersect_rsolid", "Var", "add_gear_constraint_rassembly", "add_belt_constraint_rassembly", "make_sketch_rsketch", "GraphSession", "translate_model_json_to_fcstd", "extrude_rsolid", "make_box_rsolid", "make_cylinder_rsolid", "revolve_rsolid", "Const", "apply_tag", "assign_material_rpart", "chamfer_rsolid"
+  ]
+}

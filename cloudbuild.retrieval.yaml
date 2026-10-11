@@ -1,0 +1,57 @@
+steps:
+  - name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - --file
+      - Dockerfile.retrieval
+      - --tag
+      - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/${_SERVICE}:$BUILD_ID
+      - .
+
+  - name: gcr.io/cloud-builders/docker
+    args:
+      - push
+      - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/${_SERVICE}:$BUILD_ID
+
+  - name: gcr.io/google.com/cloudsdktool/cloud-sdk:slim
+    entrypoint: gcloud
+    args:
+      - run
+      - deploy
+      - ${_SERVICE}
+      - --image
+      - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/${_SERVICE}:$BUILD_ID
+      - --region
+      - ${_REGION}
+      - --platform
+      - managed
+      - --service-account
+      - ${_RUNTIME_SERVICE_ACCOUNT}
+      - --port
+      - '8080'
+      - --memory
+      - 1Gi
+      - --cpu
+      - '1'
+      - --min-instances
+      - '1'
+      - --max-instances
+      - '3'
+      - --concurrency
+      - '20'
+      - --no-allow-unauthenticated
+      - --set-secrets
+      - EMBEDDING_API_KEY=${_EMBEDDING_API_KEY_SECRET}:latest
+
+images:
+  - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/${_SERVICE}:$BUILD_ID
+
+options:
+  logging: CLOUD_LOGGING_ONLY
+
+substitutions:
+  _REGION: us-east4
+  _REPOSITORY: iriscad
+  _SERVICE: iriscad-retrieval
+  _RUNTIME_SERVICE_ACCOUNT: iriscad-runtime@iriscad-production.iam.gserviceaccount.com
+  _EMBEDDING_API_KEY_SECRET: iriscad-embedding-api-key

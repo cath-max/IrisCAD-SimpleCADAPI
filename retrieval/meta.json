@@ -1,0 +1,12 @@
+{
+  "model": "openai/text-embedding-3-small",
+  "base_url": "https://zenmux.ai/api/v1",
+  "dimensions": 1536,
+  "doc_count": 165,
+  "reused": 112,
+  "embedded": 53,
+  "catalog": "D:/agent_project/my-simplecadapi/retrieval/catalog.jsonl",
+  "created_at": "2026-08-14T08:46:34.868753+00:00",
+  "dtype": "float32",
+  "layout": "row i of embeddings.npy aligns with line i of catalog.jsonl"
+}

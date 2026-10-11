@@ -1,0 +1,39 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
+
+.env
+
+output/
+
+# Sandbox artifacts
+sandbox/
+
+# Generated skills archives
+skills/*.tar.gz
+
+# Production retrieval artifact. Keep it aligned with catalog.jsonl and tracked
+# so Git-triggered builds cannot silently degrade to BM25-only retrieval.
+retrieval/embedding_state.json
+retrieval/smoke_query_report.json
+retrieval/last_slice.md
+
+.DS_Store
+
+# CAD/export artifacts
+*.step
+*.stl
+examples.py
+
+# webharness browser-test fixtures (large binary wheels, fetched/built locally)
+webharness/test/vendor/*.whl
+
+# Local Claude settings and session state
+/.claude/

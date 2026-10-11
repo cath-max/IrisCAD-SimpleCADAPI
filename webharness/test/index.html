@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>SimpleCADAPI webharness browser check</title>
+  </head>
+  <body>
+    <pre id="result">running...</pre>
+    <script type="module">
+      const worker = new Worker(new URL("../src/worker.mjs", import.meta.url), {
+        type: "module",
+      });
+
+      const BRACKET_CODE = `
+import simplecadapi as scad
+base = scad.make_box_rsolid(60.0, 36.0, 8.0, bottom_face_center=(0.0, 0.0, 0.0))
+hole = scad.make_cylinder_rsolid(5.0, 14.0, bottom_face_center=(0.0, 0.0, -3.0))
+slot = scad.make_box_rsolid(18.0, 8.0, 14.0, bottom_face_center=(14.0, 0.0, -3.0))
+part = scad.cut_rsolid(base, hole, slot)
+boss = scad.make_cylinder_rsolid(8.0, 7.0, bottom_face_center=(-18.0, 0.0, 8.0))
+part = scad.union_rsolid(part, boss)
+part = scad.apply_tag(part, "role.demo.bracket")
+print("volume", round(part.get_volume(), 3))
+print("faces", len(part.get_faces()))
+print("tags", scad.list_tags(part))
+`;
+
+      const BAD_CODE = `scad.make_box_rsolid(-1, 1, 1)`;
+
+      function post(type, data) {
+        return new Promise((resolve) => {
+          const id = Math.random().toString(36).slice(2);
+          const handler = (event) => {
+            if (event.data.id !== id) return;
+            worker.removeEventListener("message", handler);
+            resolve(event.data);
+          };
+          worker.addEventListener("message", handler);
+          worker.postMessage({ id, type, data });
+        });
+      }
+
+      function summarizeExport(resp) {
+        if (!resp.data) return resp;
+        const { bytes, ...rest } = resp.data;
+        return { ...resp, data: { ...rest, byteLength: bytes ? bytes.length : 0 } };
+      }
+
+      (async () => {
+        const results = {};
+
+        results.run_code = await post("run_code", {
+          code: BRACKET_CODE,
+          sessionId: "default",
+        });
+
+        results.run_code_error_path = await post("run_code", {
+          code: BAD_CODE,
+          sessionId: "default",
+        });
+
+        results.export_step = summarizeExport(
+          await post("export_shape", {
+            sessionId: "default",
+            shapeName: "part",
+            format: "step",
+            path: "/tmp/bracket.step",
+          }),
+        );
+
+        results.export_stl = summarizeExport(
+          await post("export_shape", {
+            sessionId: "default",
+            shapeName: "part",
+            format: "stl",
+            path: "/tmp/bracket.stl",
+          }),
+        );
+
+        window.__TEST_RESULT__ = results;
+        document.getElementById("result").textContent = JSON.stringify(
+          results,
+          null,
+          2,
+        );
+        window.__TEST_DONE__ = true;
+      })().catch((err) => {
+        window.__TEST_ERROR__ = err && err.message ? err.message : String(err);
+        window.__TEST_DONE__ = true;
+        document.getElementById("result").textContent =
+          "FATAL: " + window.__TEST_ERROR__;
+      });
+    </script>
+  </body>
+</html>
